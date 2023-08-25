@@ -24,14 +24,10 @@ const storage = multer.diskStorage({
     cb(null, "uploads/");
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix =
-      Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
     cb(
       null,
-      file.fieldname +
-      "-" +
-      uniqueSuffix +
-      path.extname(file.originalname)
+      file.fieldname + "-" + uniqueSuffix + path.extname(file.originalname)
     );
   },
 });
@@ -43,8 +39,7 @@ let activeCredential;
 const saveImages = async (imageUrl) => {
   const options = {
     url: imageUrl.url,
-    dest:
-      "C:/Users/yborg/OneDrive/Escritorio/shutterstock_commercial_bknd/assets/images",
+    dest: "C:/Users/Rene Meza/Documents/borrarImagenes",
   };
   try {
     const { filename } = await download.image(options);
@@ -66,10 +61,9 @@ app.post(
       );
 
       const imageMetadataPromises = listOfIds.map(async (elem) => {
-        const getInfoOfImage = await factoryShutterstock(process.env.SHUTTERSTOCK_COMMERCIAL_TOKEN).getImageDataWithCredentials(
-          elem.shutterstock_id,
-          "Commercial"
-        );
+        const getInfoOfImage = await factoryShutterstock(
+          process.env.SHUTTERSTOCK_COMMERCIAL_TOKEN
+        ).getImageDataWithCredentials(elem.shutterstock_id, "Commercial");
 
         return {
           shutterstock_id: getInfoOfImage.id,
@@ -87,13 +81,13 @@ app.post(
           requested_date: new Date(),
           filename: getInfoOfImage.original_filename,
           license_id: "",
+          actCred: activeCredential,
         };
       });
 
       const imageMetadataList = await Promise.all(imageMetadataPromises);
       const insertedPromises = imageMetadataList.map(async (imageMetadata) => {
-        return factoryShutterstock()
-          .insertDB(imageMetadata, "Commercial", activeCredential);
+        return factoryShutterstock().insertDB(imageMetadata, "Commercial");
       });
 
       await Promise.all(insertedPromises);
@@ -106,86 +100,76 @@ app.post(
 );
 
 // Endpoint for the Editorial Shutterstock account
-app.post(
-  "/licenseImagesEditorial",
-  upload.single("file"),
-  async (req, res) => {
-    try {
-      const filePath = req.file.path;
-      const listOfIds = await importCsv(
-        fs.createReadStream(filePath).pipe(csv())
-      );
+app.post("/licenseImagesEditorial", upload.single("file"), async (req, res) => {
+  try {
+    const filePath = req.file.path;
+    const listOfIds = await importCsv(
+      fs.createReadStream(filePath).pipe(csv())
+    );
 
-      const processedImages = await Promise.all(
-        listOfIds.map(async (elem) => {
-          // let getInfoOfImage = await tryGetImageData(
-          //   elem.shutterstock_id
-          // );
-          console.log(elem);
-          let getInfoOfImage;
+    const processedImages = await Promise.all(
+      listOfIds.map(async (elem) => {
+        // let getInfoOfImage = await tryGetImageData(
+        //   elem.shutterstock_id
+        // );
+        console.log(elem);
+        let getInfoOfImage;
 
-          getInfoOfImage = await tryGetImageData(
-            elem.shutterstock_id
-          );
-          // let retry = 0;
+        getInfoOfImage = await tryGetImageData(elem.shutterstock_id);
+        // let retry = 0;
 
-          // while (retry < 2) {
-          //   getInfoOfImage = await tryGetImageData(
-          //     elem.shutterstock_id
-          //   );
-          //   if (
-          //     getInfoOfImage &&
-          //     getInfoOfImage.error === "Not Found"
-          //   ) {
-          //     console.log(
-          //       "No se encontro este archivo, retrying..."
-          //     );
-          //     retry++;
-          //   } else {
-          //     break;
-          //   }
-          // }
+        // while (retry < 2) {
+        //   getInfoOfImage = await tryGetImageData(
+        //     elem.shutterstock_id
+        //   );
+        //   if (
+        //     getInfoOfImage &&
+        //     getInfoOfImage.error === "Not Found"
+        //   ) {
+        //     console.log(
+        //       "No se encontro este archivo, retrying..."
+        //     );
+        //     retry++;
+        //   } else {
+        //     break;
+        //   }
+        // }
 
-          if (getInfoOfImage) {
-            const imageMetadata = {
-              shutterstock_id: getInfoOfImage.id,
-              description: getInfoOfImage.description,
-              categories: getInfoOfImage.categories
-                .map((obj) => obj.name)
-                .join(","),
-              keywords: getInfoOfImage.keywords.toString(),
-              displayname: getInfoOfImage.assets.original.display_name,
-              is_licensable: getInfoOfImage.assets.original.is_licensable,
-              requested_date: new Date(),
-              filename: getInfoOfImage.title,
-              license_id: "",
-            };
+        if (getInfoOfImage) {
+          const imageMetadata = {
+            shutterstock_id: getInfoOfImage.id,
+            description: getInfoOfImage.description,
+            categories: getInfoOfImage.categories
+              .map((obj) => obj.name)
+              .join(","),
+            keywords: getInfoOfImage.keywords.toString(),
+            displayname: getInfoOfImage.assets.original.display_name,
+            is_licensable: getInfoOfImage.assets.original.is_licensable,
+            requested_date: new Date(),
+            filename: getInfoOfImage.title,
+            license_id: "",
+            actCred: getInfoOfImage.actCred,
+          };
 
-            return imageMetadata;
-          }
-        })
-      );
+          return imageMetadata;
+        }
+      })
+    );
 
-      // console.log(processedImages.length);
+    const insertedPromises = processedImages.map(async (imageMetadata) => {
+      return factoryShutterstock().insertDB(imageMetadata, "Editorial");
+    });
 
-      const insertedPromises = processedImages.map(async (imageMetadata) => {
-        return factoryShutterstock().insertDB(
-          imageMetadata,
-          "Editorial",
-          activeCredential
-        );
-      });
+    const result = await Promise.all(insertedPromises);
 
-      await Promise.all(insertedPromises);
-
-      res.send(
-        "Proceso de obtencion de imagenes EDITORIALES satisfactorio..."
-      );
-    } catch (error) {
-      console.error(error.response?.data || error.message);
-    }
+    res.status(200).json({
+      message: "Proceso de obtencion de imagenes EDITORIALES satisfactorio...",
+      data: [...result],
+    });
+  } catch (error) {
+    console.error(error.response?.data || error.message);
   }
-);
+});
 
 // Import the CSV file
 const importCsv = async (stream) => {
@@ -209,38 +193,23 @@ async function tryGetImageData(imageId) {
       process.env.SHUTTERSTOCK_COMMERCIAL_TOKEN,
     ];
     let lastError;
+    activeCredential = credentials[0];
 
     const getImageData = await factoryShutterstock(
       credentials[0]
     ).getImageDataWithCredentials(imageId, "Editorial");
 
-    if (!getImageData.error) {
-      activeCredential = credentials[0];
-      return getImageData;
-    } else {
+    if (getImageData.error) {
       activeCredential = credentials[1];
       return await factoryShutterstock(
         credentials[1]
       ).getImageDataWithCredentials(imageId, "Editorial");
     }
 
-    // for await (const credential of credentials) {
-    //   const getImageData = await factoryShutterstock(
-    //     credential
-    //   ).getImageDataWithCredentials(imageId, "Editorial");
-
-    //   if (!getImageData.error) {
-    //     activeCredential = credential;
-    //     return getImageData;
-    //   } else {
-    //     lastError = getImageData.error;
-    //   }
-    // }
-
-    console.error("Todas las credenciales fallaron:", lastError);
-    return null;
+    return { ...getImageData, actCred: activeCredential };
   } catch (error) {
-    console.error(error.message);
+    console.log("Problema con la obtencion de los datos de la imagen");
+    console.error(error);
     //return null;
   }
 }
@@ -253,10 +222,7 @@ const factoryShutterstock = (credentials) => {
     Authorization: `Bearer ${credentials}`,
   };
 
-  const getImageDataWithCredentials = async (
-    imageId,
-    licenseType
-  ) => {
+  const getImageDataWithCredentials = async (imageId, licenseType) => {
     try {
       if (licenseType === "Commercial") {
         activeCredential = credentials;
@@ -271,7 +237,9 @@ const factoryShutterstock = (credentials) => {
         const params = new URLSearchParams();
         params.append("country", "USA");
         const getImageData = await fetch(
-          `${process.env.API_URL_SANDBOX}editorial/images/${imageId}?${params.toString()}`,
+          `${
+            process.env.API_URL_SANDBOX
+          }editorial/images/${imageId}?${params.toString()}`,
           {
             headers,
           }
@@ -284,11 +252,7 @@ const factoryShutterstock = (credentials) => {
     }
   };
 
-  const licenseImage = async (
-    imageId,
-    licenseType,
-    credential
-  ) => {
+  const licenseImage = async (imageId, licenseType, credential) => {
     try {
       const headers = {
         "Content-type": "application/json",
@@ -380,52 +344,39 @@ const factoryShutterstock = (credentials) => {
     }
   };
 
-  const insertDB = async (
-    imageMetadata,
-    licenseType,
-    credential
-  ) => {
+  const insertDB = async (imageMetadata, licenseType) => {
     try {
-      const [result] = await getImageMetadata(
-        imageMetadata.shutterstock_id
-      );
+      const [result] = await getImageMetadata(imageMetadata.shutterstock_id);
       if (!result[0]) {
         let getImageLicense;
         if (licenseType === "Commercial") {
           getImageLicense = await licenseImage(
             imageMetadata.shutterstock_id,
             "Commercial",
-            credential
+            imageMetadata.actCred
           );
-          imageMetadata.license_id =
-            getImageLicense.data[0].license_id;
-          const [data] = await insertImageCommercialMetadata(
-            imageMetadata
-          );
+          imageMetadata.license_id = getImageLicense.data[0].license_id;
+          const [data] = await insertImageCommercialMetadata(imageMetadata);
         } else {
           getImageLicense = await licenseImage(
             imageMetadata.shutterstock_id,
             "Editorial",
-            credential
+            imageMetadata.actCred
           );
-          imageMetadata.license_id =
-            getImageLicense.data[0].license_id;
-          const [data] = await insertImageEditorialMetadata(
-            imageMetadata
-          );
+          imageMetadata.license_id = getImageLicense.data[0].license_id;
+          const [data] = await insertImageEditorialMetadata(imageMetadata);
         }
-
         saveImages(getImageLicense.data[0].download);
 
-        return 'Archivo registrado y guardado';
+        return "Archivo registrado y guardado";
       }
-      return 'Ya existe este archivo';
+      return "Ya existe este archivo";
     } catch (error) {
       error.response && error.response.data
-        ? console.error('Error en la respuesta de la API:', error.response.data)
-        : console.error('Error desconocido:', error);
+        ? console.error("Error en la respuesta de la API:", error.response.data)
+        : console.error("Error desconocido:", error);
 
-      return 'Error al procesar el archivo';
+      return "Error al procesar el archivo";
     }
   };
 
@@ -439,6 +390,3 @@ const factoryShutterstock = (credentials) => {
 app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
-
-
-
