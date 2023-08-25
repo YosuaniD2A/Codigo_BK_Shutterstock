@@ -1,0 +1,9 @@
+Para implementar este bloque de codigo Backend, es necesario realizar algunos ajustes en:
+
+    - Cambiar la ruta donde se guardaran los archivos que se descargaran
+
+    - Para ejecutar este back es necesario usar el comando: node index.js
+
+    - Cambiar la variable de entorno del API_URL_SANDBOX por API_URL_BASE tanto en la obtencion de la imagen como en la licencia
+
+    - Cambiar las tablas en el archivo sqlQuery a la tabla que realmente vamos a usar en la BD
