@@ -37,10 +37,9 @@ let activeCredential;
 
 // Utility function to download images
 const saveImages = async (imageUrl) => {
-  const imageId = getImageIdFromUrl(imageUrl.url);
   const options = {
     url: imageUrl.url,
-    dest: `C:/Users/yborg/OneDrive/Documents/Codigo_BK_Shutterstock/images/${imageId}.jpg`,
+    dest: "C:/Users/yborg/OneDrive/Documents/Codigo_BK_Shutterstock/images",
   };
   try {
     const { filename } = await download.image(options);
@@ -49,17 +48,6 @@ const saveImages = async (imageUrl) => {
     console.error(err);
   }
 };
-
-function getImageIdFromUrl(imageUrl) {
-  const parts = imageUrl.split('/');
-  let name = parts[parts.length - 1].split('.')[0];
-
-  if (!name.startsWith("shutterstock_")) {
-    return `shutterstock_${name}`;
-  }
-  return name;
-}
-
 
 // Endpoint for the Commercial Shutterstock account
 app.post(
@@ -72,67 +60,41 @@ app.post(
         fs.createReadStream(filePath).pipe(csv())
       );
 
-      const imageMetadataPromises = await Promise.all(listOfIds.map(async (elem) => {
+      const imageMetadataPromises = listOfIds.map(async (elem) => {
         const getInfoOfImage = await factoryShutterstock(
           process.env.SHUTTERSTOCK_COMMERCIAL_TOKEN
         ).getImageDataWithCredentials(elem.shutterstock_id, "Commercial");
 
-        //console.log(getInfoOfImage);
-        if (getInfoOfImage === 'undefined' || getInfoOfImage.errors) {
-          console.log(`Error con el ID ${elem.shutterstock_id}`);
-          return {
-            shutterstock_id: elem.shutterstock_id,
-            error: `Problema con el ID ${elem.shutterstock_id}`
-          }
-        }
-        else {
-          return {
-            shutterstock_id: getInfoOfImage.id,
-            description: getInfoOfImage.description,
-            categories: getInfoOfImage.categories
-              .map((obj) => obj.name)
-              .join(","),
-            keywords: getInfoOfImage.keywords.toString(),
-            contributor: getInfoOfImage.contributor.id,
-            is_adult: getInfoOfImage.is_adult,
-            displayname: getInfoOfImage.assets.huge_jpg.display_name,
-            file_size: getInfoOfImage.assets.huge_jpg.file_size,
-            format: getInfoOfImage.assets.huge_jpg.format,
-            is_licensable: getInfoOfImage.assets.huge_jpg.is_licensable,
-            requested_date: new Date(),
-            filename: getInfoOfImage.original_filename,
-            license_id: "",
-          };
-        }
-
-      })
-      );
-
+        return {
+          shutterstock_id: getInfoOfImage.id,
+          description: getInfoOfImage.description,
+          categories: getInfoOfImage.categories
+            .map((obj) => obj.name)
+            .join(","),
+          keywords: getInfoOfImage.keywords.toString(),
+          contributor: getInfoOfImage.contributor.id,
+          is_adult: getInfoOfImage.is_adult,
+          displayname: getInfoOfImage.assets.huge_jpg.display_name,
+          file_size: getInfoOfImage.assets.huge_jpg.file_size,
+          format: getInfoOfImage.assets.huge_jpg.format,
+          is_licensable: getInfoOfImage.assets.huge_jpg.is_licensable,
+          requested_date: new Date(),
+          filename: getInfoOfImage.original_filename,
+          license_id: "",
+          actCred: activeCredential,
+        };
+      });
 
       const imageMetadataList = await Promise.all(imageMetadataPromises);
-      //console.log(imageMetadataList);
-
-      const insertedPromises = await Promise.all(imageMetadataList.map(async (imageMetadata) => {
-        return factoryShutterstock(process.env.SHUTTERSTOCK_COMMERCIAL_TOKEN).insertDB(imageMetadata, "Commercial");
-      }));
-      //console.log(insertedPromises);
-      // const result = await Promise.all(insertedPromises);
-
-      const result = insertedPromises.forEach(elem => {
-        if (elem !== null) {
-          if (elem.url)
-            saveImages(elem);
-          else
-            console.log("Archivo existente en la BD, ya debe estar descargado...");
-        }
+      const insertedPromises = imageMetadataList.map(async (imageMetadata) => {
+        return factoryShutterstock().insertDB(imageMetadata, "Commercial");
       });
 
-      res.status(200).json({
-        message: "Proceso de obtencion de imagenes COMERCIALES satisfactorio...",
-        //data: [...result],
-      });
+      await Promise.all(insertedPromises);
+
+      res.send("Proceso de obtencion de imagenes COMERCIALES satisfactorio...");
     } catch (error) {
-      console.log(error.response?.data || error);
+      console.error(error.response?.data || error.message);
     }
   }
 );
@@ -145,61 +107,78 @@ app.post("/licenseImagesEditorial", upload.single("file"), async (req, res) => {
       fs.createReadStream(filePath).pipe(csv())
     );
 
+    const processedImages = await Promise.all(
+      listOfIds.map(async (elem) => {
+        // let getInfoOfImage = await tryGetImageData(
+        //   elem.shutterstock_id
+        // );
+        console.log(elem);
+        let getInfoOfImage;
 
-    const imageMetadataPromises = await Promise.all(listOfIds.map(async (elem) => {
-      const getInfoOfImage = await factoryShutterstock(
-        process.env.SHUTTERSTOCK_EDITORIAL_TOKEN
-      ).getImageDataWithCredentials(elem.shutterstock_id, "Editorial");
+        getInfoOfImage = await tryGetImageData(elem.shutterstock_id);
+        // let retry = 0;
 
-      if (getInfoOfImage == undefined || getInfoOfImage.errors) {
-        console.log(`Error con el ID ${elem.shutterstock_id}`);
-        return {
-          shutterstock_id: elem.shutterstock_id,
-          error: `Problema con el ID ${elem.shutterstock_id}`
+        // while (retry < 2) {
+        //   getInfoOfImage = await tryGetImageData(
+        //     elem.shutterstock_id
+        //   );
+        //   if (
+        //     getInfoOfImage &&
+        //     getInfoOfImage.error === "Not Found"
+        //   ) {
+        //     console.log(
+        //       "No se encontro este archivo, retrying..."
+        //     );
+        //     retry++;
+        //   } else {
+        //     break;
+        //   }
+        // }
+
+        if (getInfoOfImage) {
+          const imageMetadata = {
+            shutterstock_id: getInfoOfImage.id,
+            description: getInfoOfImage.description,
+            categories: getInfoOfImage.categories
+              .map((obj) => obj.name)
+              .join(","),
+            keywords: getInfoOfImage.keywords.toString(),
+            displayname: getInfoOfImage.assets.original.display_name,
+            is_licensable: getInfoOfImage.assets.original.is_licensable,
+            requested_date: new Date(),
+            filename: getInfoOfImage.title,
+            license_id: "",
+            actCred: getInfoOfImage.actCred,
+          };
+
+          return imageMetadata;
         }
-      }
-      else {
-        return {
-          shutterstock_id: getInfoOfImage.id,
-          description: getInfoOfImage.description,
-          categories: getInfoOfImage.categories
-            .map((obj) => obj.name)
-            .join(","),
-          keywords: getInfoOfImage.keywords.toString(),
-          displayname: getInfoOfImage.assets.original.display_name,
-          is_licensable: getInfoOfImage.assets.original.is_licensable,
-          requested_date: new Date(),
-          filename: getInfoOfImage.title,
-          license_id: "",
-        };
-      }
-    })
-    );
+      })
+    )
+    // .then(results => {
+    //   results.forEach( async (result) => {
+    //     const [data] = await insertImageEditorialMetadata(element);
+    //     console.log(data);
+    //   });
+    // })
+    // .catch(error => {
+    //   console.error(error);
+    // });
 
-    const imageMetadataList = await Promise.all(imageMetadataPromises);
-    console.log(imageMetadataList);
+    console.log(processedImages.length);
 
-    const insertedPromises = await Promise.all(imageMetadataList.map(async (imageMetadata) => {
-      return factoryShutterstock(process.env.SHUTTERSTOCK_EDITORIAL_TOKEN).insertDB(imageMetadata, "Editorial");
-    }))//TODO Esto se puso en un Promise all
-    console.log(insertedPromises);
-    //const result = await Promise.all(insertedPromises);
+    // const insertedPromises = processedImages.map(async (imageMetadata) => {
+    //   return factoryShutterstock().insertDB(imageMetadata, "Editorial");
+    // });
 
-    const result = insertedPromises.forEach(elem => {
-      if (elem !== null) {
-        if (elem.url)
-          saveImages(elem);
-        else
-          console.log("Archivo existente en la BD, ya debe estar descargado...");
-      }
-    });
+    // const result = await Promise.all(insertedPromises);
 
     res.status(200).json({
       message: "Proceso de obtencion de imagenes EDITORIALES satisfactorio...",
       //data: [...result],
     });
   } catch (error) {
-    console.log(error.response?.data || error);
+    console.error(error.response?.data || error.message);
   }
 });
 
@@ -218,6 +197,7 @@ const importCsv = async (stream) => {
 };
 
 // Function to attempt to get the image with different credentials
+
 async function tryGetImageData(imageId) {
   try {
     const credentials = [
@@ -257,6 +237,7 @@ const factoryShutterstock = (credentials) => {
   const getImageDataWithCredentials = async (imageId, licenseType) => {
     try {
       if (licenseType === "Commercial") {
+        activeCredential = credentials;
         const getImageData = await fetch(
           `${process.env.API_URL_SANDBOX}images/${imageId}`,
           {
@@ -268,7 +249,8 @@ const factoryShutterstock = (credentials) => {
         const params = new URLSearchParams();
         params.append("country", "USA");
         const getImageData = await fetch(
-          `${process.env.API_URL_BASE
+          `${
+            process.env.API_URL_SANDBOX
           }editorial/images/${imageId}?${params.toString()}`,
           {
             headers,
@@ -282,12 +264,12 @@ const factoryShutterstock = (credentials) => {
     }
   };
 
-  const licenseImage = async (imageId, licenseType) => {
+  const licenseImage = async (imageId, licenseType, credential) => {
     try {
       const headers = {
         "Content-type": "application/json",
         Accept: "application/json",
-        Authorization: `Bearer ${credentials}`,
+        Authorization: `Bearer ${credential}`,
       };
       if (licenseType === "Commercial") {
         const bodyData = {
@@ -316,7 +298,7 @@ const factoryShutterstock = (credentials) => {
       } else {
         let licenseOfimage;
         const order_idRandom = uuidv4();
-        if (credentials === process.env.SHUTTERSTOCK_EDITORIAL_TOKEN) {
+        if (credential === process.env.SHUTTERSTOCK_EDITORIAL_TOKEN) {
           const bodyData = {
             editorial: [
               {
@@ -331,7 +313,7 @@ const factoryShutterstock = (credentials) => {
           };
           const body = JSON.stringify(bodyData);
           licenseOfimage = await fetch(
-            `${process.env.API_URL_BASE}editorial/images/licenses`,
+            `${process.env.API_URL_SANDBOX}editorial/images/licenses`,
             {
               headers,
               method: "POST",
@@ -353,12 +335,12 @@ const factoryShutterstock = (credentials) => {
           };
           const body = JSON.stringify(bodyData);
           licenseOfimage = await fetch(
-            `${process.env.API_URL_BASE}editorial/images/licenses`,
+            `${process.env.API_URL_SANDBOX}editorial/images/licenses`,
             {
               headers: {
                 "Content-Type": "application/json",
                 Accept: "application/json",
-                Authorization: `Bearer ${credentials}`,
+                Authorization: `Bearer ${credential}`,
               },
               method: "POST",
               body,
@@ -382,53 +364,31 @@ const factoryShutterstock = (credentials) => {
         if (licenseType === "Commercial") {
           getImageLicense = await licenseImage(
             imageMetadata.shutterstock_id,
-            "Commercial"
+            "Commercial",
+            imageMetadata.actCred
           );
-          //console.log(getImageLicense);
-          if (getImageLicense.data) {
-            if (getImageLicense.data[0].license_id) {
-              imageMetadata.license_id = getImageLicense.data[0].license_id;
-              const [data] = await insertImageCommercialMetadata(imageMetadata);
-              return getImageLicense.data[0].download
-            } else {
-              return null;
-            }
-          } else {
-            return null;
-          }
+          imageMetadata.license_id = getImageLicense.data[0].license_id;
+          const [data] = await insertImageCommercialMetadata(imageMetadata);
         } else {
           getImageLicense = await licenseImage(
             imageMetadata.shutterstock_id,
-            "Editorial"
+            "Editorial",
+            imageMetadata.actCred
           );
-          console.log(getImageLicense);
-          if (getImageLicense.data) {
-            if (getImageLicense.data[0].license_id) {
-              imageMetadata.license_id = getImageLicense.data[0].license_id;
-              const [data] = await insertImageEditorialMetadata(imageMetadata);
-              return getImageLicense.data[0].download
-            } else {
-              return null
-            }
-          } else {
-            return null;
-          }
+          imageMetadata.license_id = getImageLicense.data[0].license_id;
+          const [data] = await insertImageEditorialMetadata(imageMetadata);
         }
-        //saveImages(getImageLicense.data[0].download);
+        saveImages(getImageLicense.data[0].download);
 
-        //return "Archivo registrado y guardado";
+        return "Archivo registrado y guardado";
       }
-
-      return `Archivo existente este ID: ${imageMetadata.shutterstock_id} en la BD`;
-
+      return "Ya existe este archivo";
     } catch (error) {
-      if (error.code && error.code === 'ER_DUP_ENTRY') {
-        console.log("Mensaje:", error);
-        return "Archivo existente en la BD"
-      } else {
-        console.log(error);
-        return { error: `Error al procesar el archivo con ID: ${imageMetadata.shutterstock_id}` };
-      }
+      error.response && error.response.data
+        ? console.error("Error en la respuesta de la API:", error.response.data)
+        : console.error("Error desconocido:", error);
+
+      return "Error al procesar el archivo";
     }
   };
 
